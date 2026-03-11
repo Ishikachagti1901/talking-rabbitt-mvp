@@ -1,51 +1,63 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
+import os
+from openai import OpenAI
 
-st.title("Talking Rabbitt 🐰")
-st.subheader("Ask questions to your business data")
+st.set_page_config(page_title="Talking Rabbitt", layout="wide")
 
-uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+st.title("🐰 Talking Rabbitt")
+st.subheader("Talk to your business data")
 
-if uploaded_file is not None:
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=st.secrets["OPENROUTER_API_KEY"]
+)
+uploaded_file = st.file_uploader("Upload your sales CSV", type=["csv"])
+
+if uploaded_file:
 
     df = pd.read_csv(uploaded_file)
 
     st.write("### Data Preview")
-    st.dataframe(df)
+    st.dataframe(df.head())
 
-    question = st.text_input("Ask a question")
+    question = st.text_input("Ask a question about your data")
 
     if question:
 
-        q = question.lower()
+        prompt = f"""
+You are a business data analyst.
 
-        if "highest revenue" in q:
+Dataset columns:
+{df.columns.tolist()}
 
-            result = df.groupby("Region")["Revenue"].sum()
-            top_region = result.idxmax()
-            top_value = result.max()
+Sample data:
+{df.head(5).to_string()}
 
-            st.success(f"{top_region} has the highest revenue: {top_value}")
+User Question:
+{question}
 
-            st.write("### Revenue by Region")
-            result.plot(kind="bar")
+Give a short, clear answer.
+"""
 
-            st.pyplot(plt)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+        )
 
-        elif "total revenue" in q:
+        answer = response.choices[0].message.content
 
-            total = df["Revenue"].sum()
-            st.success(f"Total revenue is {total}")
+        st.write("### Insight")
+        st.write(answer)
 
-        elif "trend" in q:
+    st.write("### Quick Visualization")
 
-            result = df.groupby("Month")["Revenue"].sum()
+    x_col = st.selectbox("X Axis", df.columns)
+    numeric_cols = df.select_dtypes(include="number").columns
 
-            st.write("### Revenue Trend")
-            result.plot()
+    if len(numeric_cols) > 0:
+        y_col = st.selectbox("Y Axis", numeric_cols)
 
-            st.pyplot(plt)
-
-        else:
-            st.warning("Try asking: highest revenue, total revenue, or revenue trend.")
+        fig = px.bar(df, x=x_col, y=y_col)
+        st.plotly_chart(fig)
